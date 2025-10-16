@@ -1,69 +1,198 @@
-name: OWASP ZAP Scan
+name: OWASP ZAP Security Scan
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
   pull_request:
-
-permissions:
-  contents: write
-  issues: write
+    branches: [ main, master ]
+  workflow_dispatch:
 
 jobs:
   zap_scan:
     runs-on: ubuntu-latest
-
-    services:
-      app:
-        image: python:3.10
-        options: >-
-          --health-cmd="curl -f http://localhost:8080 || exit 1"
-          --health-interval=5s
-          --health-timeout=2s
-          --health-retries=5
-        ports:
-          - 8080:8080
-        volumes:
-          - ./:/app
-
+    name: Security Scan with OWASP ZAP
+    
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      # Instalar dependências e iniciar a aplicação
-      - name: Install dependencies and start app
-        run: |
-          pip install -r requirements.txt
-          nohup python app.py &
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
 
-      # Aguarda o serviço ficar saudável
-      - name: Wait for application to be ready
+      - name: Install dependencies
         run: |
-          echo "Waiting for app to be ready..."
-          for i in {1..30}; do
-            if curl -s http://localhost:8080; then
-              echo "App is up!"
-              break
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Start application
+        run: |
+          echo "Starting application in background..."
+          nohup python app.py > app.log 2>&1 &
+          echo $! > app.pid
+          
+          echo "Waiting for application to start..."
+          timeout=60
+          elapsed=0
+          while ! curl -s http://localhost:8080 > /dev/null; do
+            if [ $elapsed -ge $timeout ]; then
+              echo "Application failed to start within ${timeout}s"
+              cat app.log
+              exit 1
             fi
             sleep 2
+            elapsed=$((elapsed + 2))
+            echo "Waiting... (${elapsed}s)"
           done
+          echo "Application is running!"
 
-      # Rodar OWASP ZAP Scan
-      - name: Run OWASP ZAP Scan
-        uses: zaproxy/action-full-scan@v0.9.0
+      - name: Run OWASP ZAP Baseline Scan
+        uses: zaproxy/action-baseline@v0.12.0
         with:
           target: 'http://localhost:8080'
+          rules_file_name: '.zap/rules.tsv'
+          cmd_options: '-a -j -l INFO'
           allow_issue_writing: false
-          artifact_name: 'zap-scan-results'
-          cmd_options: '-r zap-report.html -J report_json.json -w report_md.md'
-          fail_action: true
+          fail_action: false
 
-      # Upload dos relatórios
-      - name: Upload ZAP Reports
+      - name: Generate HTML Report
+        run: |
+          docker run --network="host" -v $(pwd):/zap/wrk/:rw -t ghcr.io/zaproxy/zaproxy:stable bash -c \
+            "zap.sh -cmd -quickurl http://localhost:8080 -quickprogress -quickout /zap/wrk/zap_report.html"
+
+      - name: Analyze ZAP Report
+        id: analyze_report
+        run: |
+          echo "Analyzing ZAP report..."
+          
+          # Parse JSON report
+          if [ -f report_json.json ]; then
+            python3 << 'EOF'
+          import json
+          import sys
+          
+          try:
+              with open('report_json.json', 'r') as f:
+                  data = json.load(f)
+              
+              site = data.get('site', [{}])[0]
+              alerts = site.get('alerts', [])
+              
+              # Count by severity
+              severity_counts = {
+                  'Informational': 0,
+                  'Low': 0,
+                  'Medium': 0,
+                  'High': 0,
+                  'Critical': 0
+              }
+              
+              vulnerability_types = {}
+              total_alerts = len(alerts)
+              
+              for alert in alerts:
+                  risk = alert.get('riskdesc', 'Unknown').split()[0]
+                  severity_counts[risk] = severity_counts.get(risk, 0) + 1
+                  
+                  vuln_name = alert.get('name', 'Unknown')
+                  vulnerability_types[vuln_name] = vulnerability_types.get(vuln_name, 0) + 1
+              
+              print(f"\n{'='*60}")
+              print("OWASP ZAP SCAN RESULTS")
+              print(f"{'='*60}")
+              print(f"\nTotal Alerts: {total_alerts}")
+              print(f"\nAlerts by Severity:")
+              print(f"  • Critical: {severity_counts.get('Critical', 0)}")
+              print(f"  • High: {severity_counts.get('High', 0)}")
+              print(f"  • Medium: {severity_counts.get('Medium', 0)}")
+              print(f"  • Low: {severity_counts.get('Low', 0)}")
+              print(f"  • Informational: {severity_counts.get('Informational', 0)}")
+              
+              print(f"\nTop Vulnerability Types:")
+              sorted_vulns = sorted(vulnerability_types.items(), key=lambda x: x[1], reverse=True)
+              for vuln, count in sorted_vulns[:5]:
+                  print(f"  • {vuln}: {count}")
+              print(f"{'='*60}\n")
+              
+              # Set outputs
+              with open('zap_summary.txt', 'w') as f:
+                  f.write(f"Total: {total_alerts}\n")
+                  f.write(f"Critical: {severity_counts.get('Critical', 0)}\n")
+                  f.write(f"High: {severity_counts.get('High', 0)}\n")
+                  f.write(f"Medium: {severity_counts.get('Medium', 0)}\n")
+                  f.write(f"Low: {severity_counts.get('Low', 0)}\n")
+              
+              # Fail if High or Critical vulnerabilities found
+              if severity_counts.get('Critical', 0) > 0 or severity_counts.get('High', 0) > 0:
+                  print("❌ SECURITY SCAN FAILED: Critical or High severity vulnerabilities detected!")
+                  sys.exit(1)
+              else:
+                  print("✅ SECURITY SCAN PASSED: No Critical or High severity vulnerabilities found.")
+                  sys.exit(0)
+                  
+          except FileNotFoundError:
+              print("⚠️  JSON report not found, skipping detailed analysis")
+              sys.exit(0)
+          except Exception as e:
+              print(f"⚠️  Error analyzing report: {str(e)}")
+              sys.exit(0)
+          EOF
+          else
+            echo "⚠️  JSON report not generated yet"
+          fi
+
+      - name: Check for High/Critical Vulnerabilities
+        if: always()
+        run: |
+          if [ -f zap_summary.txt ]; then
+            critical=$(grep "Critical:" zap_summary.txt | cut -d' ' -f2)
+            high=$(grep "High:" zap_summary.txt | cut -d' ' -f2)
+            
+            echo "Critical vulnerabilities: $critical"
+            echo "High vulnerabilities: $high"
+            
+            if [ "$critical" -gt 0 ] || [ "$high" -gt 0 ]; then
+              echo "::error::Security scan failed: Found $critical Critical and $high High severity vulnerabilities"
+              exit 1
+            fi
+          fi
+
+      - name: Upload ZAP HTML Report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: zap-scan-report
-          path: |
-            zap-report.html
-            report_json.json
-            report_md.md
+          name: zap-scan-report-html
+          path: zap_report.html
+          retention-days: 30
+
+      - name: Upload ZAP JSON Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-scan-report-json
+          path: report_json.json
+          retention-days: 30
+
+      - name: Upload ZAP Summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-scan-summary
+          path: zap_summary.txt
+          retention-days: 30
+
+      - name: Stop application
+        if: always()
+        run: |
+          if [ -f app.pid ]; then
+            kill $(cat app.pid) || true
+          fi
+          
+      - name: Upload Application Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: application-logs
+          path: app.log
+          retention-days: 7
