@@ -13,28 +13,42 @@ jobs:
   zap_scan:
     runs-on: ubuntu-latest
 
+    services:
+      app:
+        image: python:3.10
+        options: >-
+          --health-cmd="curl -f http://localhost:8080 || exit 1"
+          --health-interval=5s
+          --health-timeout=2s
+          --health-retries=5
+        ports:
+          - 8080:8080
+        volumes:
+          - ./:/app
+
     steps:
-      # 1. Checkout do repositório
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Configurar Python (se necessário)
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-
-      # 3. Instalar dependências
-      - name: Install dependencies
+      # Instalar dependências e iniciar a aplicação
+      - name: Install dependencies and start app
         run: |
           pip install -r requirements.txt
-
-      # 4. Iniciar a aplicação em background
-      - name: Start application
-        run: |
           nohup python app.py &
-          sleep 10  # Aguarda a aplicação ficar disponível
 
+      # Aguarda o serviço ficar saudável
+      - name: Wait for application to be ready
+        run: |
+          echo "Waiting for app to be ready..."
+          for i in {1..30}; do
+            if curl -s http://localhost:8080; then
+              echo "App is up!"
+              break
+            fi
+            sleep 2
+          done
+
+      # Rodar OWASP ZAP Scan
       - name: Run OWASP ZAP Scan
         uses: zaproxy/action-full-scan@v0.9.0
         with:
@@ -44,8 +58,12 @@ jobs:
           cmd_options: '-r zap-report.html -J report_json.json -w report_md.md'
           fail_action: true
 
-      - name: Move ZAP reports to workspace
-        run: |
-          mv zap-report.html $GITHUB_WORKSPACE/
-          mv report_json.json $GITHUB_WORKSPACE/
-          mv report_md.md $GITHUB_WORKSPACE/
+      # Upload dos relatórios
+      - name: Upload ZAP Reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-scan-report
+          path: |
+            zap-report.html
+            report_json.json
+            report_md.md
