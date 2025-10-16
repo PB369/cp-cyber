@@ -1,46 +1,58 @@
 name: OWASP ZAP Scan
 
+# Dispara o workflow em push na branch main ou PR
 on:
   push:
     branches: [ main ]
   pull_request:
+
+# Permissões explícitas para o token do GitHub
+permissions:
+  contents: write
+  issues: write
 
 jobs:
   zap_scan:
     runs-on: ubuntu-latest
 
     steps:
+      # 1. Checkout do repositório
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 2. Configurar Python (se necessário)
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: 3.10
 
+      # 3. Instalar dependências
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
 
+      # 4. Iniciar a aplicação em background
       - name: Start application
         run: |
           nohup python app.py &
-          sleep 10
-      
-      - name: Prepare environment for ZAP
-        run: |
-          sudo chmod -R 777 .
-          rm -f zap-report.html report_json.json report_md.md report_html.html
+          sleep 10  # Aguarda a aplicação ficar disponível
 
-      - name: Run OWASPZAP Scan
+      # 5. Rodar OWASP ZAP Scan
+      - name: Run OWASP ZAP Scan
         uses: zaproxy/action-full-scan@v0.9.0
         with:
           target: 'http://localhost:8080'
+          allow_issue_writing: false        # evita tentar criar issues
           artifact_name: 'zap-scan-results'
-          cmd_options: '-t http://localhost:8080 -r zap-report.html -J report_json.json -w report_md.md'
+          cmd_options: '-r zap-report.html -J report_json.json -w report_md.md'
+          fail_action: true                 # falha o job se houver alertas críticos
 
-      - name: Upload ZAP Report
+      # 6. Upload dos relatórios como artefato
+      - name: Upload ZAP Reports
         uses: actions/upload-artifact@v4
         with:
-          name: zap-report
-          path: zap-report.html
+          name: zap-scan-report
+          path: |
+            zap-report.html
+            report_json.json
+            report_md.md
