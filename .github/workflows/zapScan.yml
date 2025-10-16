@@ -33,10 +33,13 @@ jobs:
       - name: Run OWASP ZAP Scan
         uses: zaproxy/action-full-scan@v0.9.0
         with:
-          target: 'http://localhost:8080'   # ajuste se o app rodar em outra porta
+          target: 'http://localhost:8080'
           allow_issue_writing: false
           artifact_name: 'zap-scan-results'
-          output_dir: ${{ github.workspace }}
+          cmd_options: >
+            -r $GITHUB_WORKSPACE/zap-report.html
+            -J $GITHUB_WORKSPACE/report_json.json
+            -w $GITHUB_WORKSPACE/report_md.md
           fail_action: true
 
       - name: Upload ZAP Reports
