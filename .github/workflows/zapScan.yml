@@ -26,14 +26,18 @@ jobs:
         run: |
           nohup python app.py &
           sleep 10
+      
+      - name: Prepare environment for ZAP
+        run: |
+          sudo chmod -R 777 .
+          rm -f zap-report.html report_json.json report_md.md report_html.html
 
-      - name: Run OWASP ZAP Scan
+      - name: Run OWASPZAP Scan
         uses: zaproxy/action-full-scan@v0.9.0
         with:
           target: 'http://localhost:8080'
-          format: 'html'
-          fail_action: true
-          cmd_options: '-r zap-report.html'
+          artifact_name: 'zap-scan-results'
+          cmd_options: '-t http://localhost:8080 -r zap-report.html -J report_json.json -w report_md.md'
 
       - name: Upload ZAP Report
         uses: actions/upload-artifact@v4
