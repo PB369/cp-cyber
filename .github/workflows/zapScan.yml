@@ -36,7 +36,7 @@ jobs:
           target: 'http://localhost:8080'   # ajuste se o app rodar em outra porta
           allow_issue_writing: false
           artifact_name: 'zap-scan-results'
-          cmd_options: '-r zap-report.html -J report_json.json -w report_md.md'
+          output_dir: ${{ github.workspace }}
           fail_action: true
 
       - name: Upload ZAP Reports
