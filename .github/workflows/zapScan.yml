@@ -1,7 +1,9 @@
 name: OWASP ZAP Scan (External App via ngrok)
 
 on:
-  workflow_dispatch:  # permite rodar manualmente no GitHub Actions
+  workflow_dispatch:
+  push:
+    branches: [ main ]
 
 jobs:
   zap_scan:
