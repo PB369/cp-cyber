@@ -14,35 +14,39 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 1. Checkout do repositório
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 1. Build da imagem Docker
+      # 2. Build e start da aplicação em container Docker
       - name: Build Docker image
         run: |
-          docker build -t cp-cyber-app .
+          docker build -t my-web-app .
 
-      # 2. Run container em background
-      - name: Start application container
+      - name: Start Docker container
         run: |
-          docker run -d --name cp-cyber-app -p 8080:8080 cp-cyber-app
-          # Espera aplicação subir
+          docker run -d -p 8080:8080 --name my-web-app my-web-app
+          # Espera a aplicação subir
+          echo "Waiting for the app to be ready..."
           for i in {1..30}; do
-            if curl -s http://localhost:8080 > /dev/null; then
-              echo "✅ Aplicação rodando!"
+            if curl -s http://localhost:8080; then
+              echo "App is up!"
               break
             fi
-            sleep 3
+            sleep 2
           done
 
       # 3. Rodar OWASP ZAP Scan
       - name: Run OWASP ZAP Scan
         uses: zaproxy/action-full-scan@v0.9.0
         with:
-          target: 'http://localhost:8080'
+          target: 'http://host.docker.internal:8080'
           allow_issue_writing: false
           artifact_name: 'zap-scan-results'
-          cmd_options: '-r zap-report.html -J zap-report.json -w zap-report.md'
+          cmd_options: >
+            -r $GITHUB_WORKSPACE/zap-report.html
+            -J $GITHUB_WORKSPACE/zap-report.json
+            -w $GITHUB_WORKSPACE/zap-report.md
           fail_action: true
 
       # 4. Upload dos relatórios
@@ -51,10 +55,10 @@ jobs:
         with:
           name: zap-reports
           path: |
-            zap-report.html
-            zap-report.json
-            zap-report.md
+            $GITHUB_WORKSPACE/zap-report.html
+            $GITHUB_WORKSPACE/zap-report.json
+            $GITHUB_WORKSPACE/zap-report.md
 
-      # 5. Stop container
+      # 5. Cleanup
       - name: Stop Docker container
-        run: docker stop cp-cyber-app
+        run: docker stop my-web-app && docker rm my-web-app
