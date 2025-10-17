@@ -13,22 +13,33 @@ jobs:
   zap_scan:
     runs-on: ubuntu-latest
 
+    services:
+      app:
+        build:
+          context: .
+          dockerfile: Dockerfile
+        ports:
+          - 8080:8080
+        options: >-
+          --health-cmd="curl -f http://localhost:8080 || exit 1"
+          --health-interval=5s
+          --health-timeout=2s
+          --health-retries=10
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Start application
+      - name: Wait for app to be ready
         run: |
-          nohup python app.py &
-          sleep 10  # espera a aplicação iniciar
+          echo "⏳ Aguardando aplicação iniciar..."
+          for i in {1..30}; do
+            if curl -s http://localhost:8080 > /dev/null; then
+              echo "✅ Aplicação está rodando!"
+              break
+            fi
+            sleep 3
+          done
 
       - name: Run OWASP ZAP Scan
         uses: zaproxy/action-full-scan@v0.9.0
@@ -36,17 +47,14 @@ jobs:
           target: 'http://localhost:8080'
           allow_issue_writing: false
           artifact_name: 'zap-scan-results'
-          cmd_options: >
-            -r $GITHUB_WORKSPACE/zap-report.html
-            -J $GITHUB_WORKSPACE/report_json.json
-            -w $GITHUB_WORKSPACE/report_md.md
+          cmd_options: '-r zap-report.html -J zap-report.json -w zap-report.md'
           fail_action: true
 
       - name: Upload ZAP Reports
         uses: actions/upload-artifact@v4
         with:
-          name: zap-scan-report
+          name: zap-reports
           path: |
             zap-report.html
-            report_json.json
-            report_md.md
+            zap-report.json
+            zap-report.md
