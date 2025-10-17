@@ -1,23 +1,20 @@
-# Imagem base oficial do Python
+# Use a imagem oficial do Python 3.10
 FROM python:3.10-slim
 
-# Definir o diretório de trabalho dentro do container
+# Defina o diretório de trabalho dentro do container
 WORKDIR /app
 
-# Copiar arquivos de dependências
+# Copie os arquivos de requirements primeiro para aproveitar cache do Docker
 COPY requirements.txt .
 
-# Instalar as dependências do projeto
+# Instale as dependências
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiar o restante do código da aplicação
+# Copie todo o restante da aplicação
 COPY . .
 
-# Expor a porta usada pelo app
+# Exponha a porta que a aplicação usa
 EXPOSE 8080
 
-# Definir a variável de ambiente do Flask (caso use Flask)
-ENV FLASK_APP=app.py
-
-# Comando para iniciar a aplicação
+# Comando padrão para rodar a aplicação
 CMD ["python", "app.py"]

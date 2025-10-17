@@ -1,7 +1,7 @@
 name: OWASP ZAP Scan
 
 on:
-  workflow_dispatch:   # executa manualmente
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -14,24 +14,31 @@ jobs:
       - name: Checkout código
         uses: actions/checkout@v4
 
-      # Subir aplicação no Docker (Python app)
-      - name: Subir aplicação no Docker
+      # Subir aplicação e rede com docker-compose
+      - name: Subir aplicação com docker-compose
         run: |
-          docker build -t cp-cyber-app .
-          docker run -d --name cp-cyber-app -p 8080:8080 cp-cyber-app
-          sleep 15   # espera app subir
+          docker-compose up -d --build
 
-      # Rodar OWASP ZAP baseline scan
-      - name: Run OWASP ZAP Baseline Scan
+      # Esperar container ficar pronto
+      - name: Esperar aplicação ficar pronta
+        run: |
+          echo "Aguardando aplicação subir..."
+          until curl -s http://localhost:8080; do
+            sleep 2
+          done
+          echo "Aplicação pronta!"
+
+      # Rodar OWASP ZAP em container conectado à mesma rede
+      - name: Rodar OWASP ZAP Baseline Scan
         run: |
           docker run --network host \
             -v $(pwd):/zap/wrk/:rw \
             ghcr.io/zaproxy/zaproxy:stable \
-            zap-baseline.py -t http://localhost:8080 -r report.html -I
+            zap-baseline.py -t http://localhost:8080 -r zap-report.html -I
 
-      # Publicar relatório como artefato
+      # Upload do relatório como artefato
       - name: Upload ZAP Report
         uses: actions/upload-artifact@v4
         with:
           name: zap-dast-report
-          path: report.html
+          path: zap-report.html
