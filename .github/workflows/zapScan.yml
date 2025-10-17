@@ -13,61 +13,43 @@ jobs:
   zap_scan:
     runs-on: ubuntu-latest
 
-    services:
-      app:
-        image: python:3.10
-        ports:
-          - 8080:8080
-        options: >-
-          --health-cmd="curl -f http://localhost:8080 || exit 1"
-          --health-interval=5s
-          --health-timeout=2s
-          --health-retries=10
-        volumes:
-          - ./:/app
-        command: >
-          bash -c "cd /app && pip install --no-cache-dir -r requirements.txt && python app.py"
-
     steps:
       # 1. Checkout do repositório
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Espera a aplicação subir
-      - name: Wait for application
-        run: |
-          echo "Waiting for app to be ready..."
-          for i in {1..30}; do
-            if curl -s http://app:8080 > /dev/null; then
-              echo "App is up!"
-              break
-            fi
-            sleep 2
-          done
+      # 2. Configurar Python
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
 
-      # 3. Rodar OWASP ZAP Scan
+      # 3. Instalar dependências
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # 4. Iniciar a aplicação em background
+      - name: Start application
+        run: |
+          nohup python app.py &
+          sleep 10  # aguarda a aplicação subir
+
+      # 5. Rodar OWASP ZAP Scan
       - name: Run OWASP ZAP Scan
         uses: zaproxy/action-full-scan@v0.9.0
         with:
-          target: 'http://app:8080'
+          target: 'http://localhost:8080'
           allow_issue_writing: false
           artifact_name: 'zap-scan-results'
-          cmd_options: '-r /zap/wrk/zap-report.html -J /zap/wrk/zap-report.json -w /zap/wrk/zap-report.md'
+          cmd_options: '-r $GITHUB_WORKSPACE/zap-report.html -J $GITHUB_WORKSPACE/report_json.json -w $GITHUB_WORKSPACE/report_md.md'
           fail_action: true
 
-      # 4. Copiar os relatórios para o workspace do GitHub
-      - name: Move ZAP reports
-        run: |
-          mv /zap/wrk/zap-report.html $GITHUB_WORKSPACE/
-          mv /zap/wrk/zap-report.json $GITHUB_WORKSPACE/
-          mv /zap/wrk/zap-report.md $GITHUB_WORKSPACE/
-
-      # 5. Upload dos relatórios como artefatos
+      # 6. Upload dos relatórios como artefato
       - name: Upload ZAP Reports
         uses: actions/upload-artifact@v4
         with:
           name: zap-scan-report
           path: |
             zap-report.html
-            zap-report.json
-            zap-report.md
+            report_json.json
+            report_md.md
