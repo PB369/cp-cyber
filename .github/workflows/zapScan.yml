@@ -17,7 +17,7 @@ jobs:
       # Subir aplicação e rede com docker-compose
       - name: Subir aplicação com docker-compose
         run: |
-          docker-compose up -d --build
+          docker-compose -f docker-compose.yml up -d
 
       # Esperar container ficar pronto
       - name: Esperar aplicação ficar pronta
