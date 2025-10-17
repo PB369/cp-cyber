@@ -15,9 +15,10 @@ jobs:
         uses: actions/checkout@v4
 
       # Subir aplicação e rede com docker-compose
-      - name: Subir aplicação com docker-compose
+      - name: Subir aplicação no Docker
         run: |
-          docker-compose -f docker-compose.yml up -d
+          docker compose -f docker-compose.yml up -d --build
+          sleep 15
 
       # Esperar container ficar pronto
       - name: Esperar aplicação ficar pronta
