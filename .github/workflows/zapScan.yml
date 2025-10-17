@@ -1,55 +1,37 @@
 name: OWASP ZAP Scan
 
 on:
+  workflow_dispatch:   # executa manualmente
   push:
-    branches: [ main ]
-  pull_request:
-
-permissions:
-  contents: write
-  issues: write
+    branches:
+      - main
 
 jobs:
-  zap_scan:
+  dast:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout do repositório
-      - name: Checkout repository
+      - name: Checkout código
         uses: actions/checkout@v4
 
-      # 2. Configurar Python
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-
-      # 3. Instalar dependências
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      # 4. Iniciar a aplicação em background
-      - name: Start application
+      # Subir aplicação no Docker (Python app)
+      - name: Subir aplicação no Docker
         run: |
-          nohup python app.py &
-          sleep 10  # aguarda a aplicação subir
+          docker build -t cp-cyber-app .
+          docker run -d --name cp-cyber-app -p 8080:8080 cp-cyber-app
+          sleep 15   # espera app subir
 
-      # 5. Rodar OWASP ZAP Scan
-      - name: Run OWASP ZAP Scan
-        uses: zaproxy/action-full-scan@v0.9.0
-        with:
-          target: 'http://localhost:8080'
-          allow_issue_writing: false
-          artifact_name: 'zap-scan-results'
-          cmd_options: '-r $GITHUB_WORKSPACE/zap-report.html -J $GITHUB_WORKSPACE/report_json.json -w $GITHUB_WORKSPACE/report_md.md'
-          fail_action: true
+      # Rodar OWASP ZAP baseline scan
+      - name: Run OWASP ZAP Baseline Scan
+        run: |
+          docker run --network host \
+            -v $(pwd):/zap/wrk/:rw \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py -t http://localhost:8080 -r report.html -I
 
-      # 6. Upload dos relatórios como artefato
-      - name: Upload ZAP Reports
+      # Publicar relatório como artefato
+      - name: Upload ZAP Report
         uses: actions/upload-artifact@v4
         with:
-          name: zap-scan-report
-          path: |
-            zap-report.html
-            report_json.json
-            report_md.md
+          name: zap-dast-report
+          path: report.html
