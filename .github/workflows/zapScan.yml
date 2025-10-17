@@ -1,46 +1,37 @@
-name: OWASP ZAP Scan
+name: OWASP ZAP Scan (External App via ngrok)
 
 on:
-  workflow_dispatch:
-  push:
-    branches:
-      - main
+  workflow_dispatch:  # permite rodar manualmente no GitHub Actions
 
 jobs:
-  dast:
+  zap_scan:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout do código
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2️⃣ Ajustar permissões do workspace para evitar erros do ZAP
-      - name: Ajustar permissões
-        run: sudo chmod -R 777 $GITHUB_WORKSPACE
+      # Define a URL pública do seu túnel ngrok
+      # (Substitua pela sua URL atual — deve começar com https://)
+      - name: Definir URL da aplicação
+        run: echo "APP_URL=https://8cf4d0d384eb.ngrok-free.app" >> $GITHUB_ENV
 
-      # 3️⃣ Subir aplicação via Docker Compose
-      - name: Subir aplicação no Docker
-        run: |
-          docker compose -f docker-compose.yml up -d --build
-          echo "Aguardando a aplicação subir..."
-          sleep 15  # ajuste se necessário
-
-      # 4️⃣ Rodar OWASP ZAP Baseline Scan
+      # Rodar o OWASP ZAP apontando para a URL pública
       - name: Run OWASP ZAP Baseline Scan
         run: |
-          docker run --network host \
-            -v $GITHUB_WORKSPACE:/zap/wrk:rw \
+          echo "Iniciando scan em: $APP_URL"
+          docker run \
+            -v $GITHUB_WORKSPACE:/zap/wrk/:rw \
             --user $(id -u):$(id -g) \
             ghcr.io/zaproxy/zaproxy:stable \
             zap-baseline.py \
-              -t http://host.docker.internal:3001 \
+              -t $APP_URL \
               -r zap-report.html \
               -I
 
-      # 5️⃣ Upload do relatório como artefato
+      # Upload do relatório como artefato
       - name: Upload ZAP Report
         uses: actions/upload-artifact@v4
         with:
-          name: zap-dast-report
+          name: zap-scan-report
           path: zap-report.html

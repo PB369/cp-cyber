@@ -1,15 +1,28 @@
-version: "3.9"
+version: "3.8"
 
 services:
-  app:
+  backend:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile
-    container_name: cp-cyber-app
+    container_name: students_backend
     ports:
-      - "8080:8080"
+      - "4000:4000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      interval: 5s
+      retries: 12
+
+  zap:
+    image: owasp/zap2docker:latest
+    container_name: students_zap
+    depends_on:
+      backend:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "zap-baseline.py -t http://backend:4000 -r /zap/wrk/report.html -I"
     volumes:
-      - ./:/app
-    environment:
-      - PYTHONUNBUFFERED=1
-    command: python app.py
+      - ./zap-reports:/zap/wrk
+
+volumes:
+  zap-reports:
