@@ -13,34 +13,29 @@ jobs:
   zap_scan:
     runs-on: ubuntu-latest
 
-    services:
-      app:
-        build:
-          context: .
-          dockerfile: Dockerfile
-        ports:
-          - 8080:8080
-        options: >-
-          --health-cmd="curl -f http://localhost:8080 || exit 1"
-          --health-interval=5s
-          --health-timeout=2s
-          --health-retries=10
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Wait for app to be ready
+      # 1. Build da imagem Docker
+      - name: Build Docker image
         run: |
-          echo "⏳ Aguardando aplicação iniciar..."
+          docker build -t cp-cyber-app .
+
+      # 2. Run container em background
+      - name: Start application container
+        run: |
+          docker run -d --name cp-cyber-app -p 8080:8080 cp-cyber-app
+          # Espera aplicação subir
           for i in {1..30}; do
             if curl -s http://localhost:8080 > /dev/null; then
-              echo "✅ Aplicação está rodando!"
+              echo "✅ Aplicação rodando!"
               break
             fi
             sleep 3
           done
 
+      # 3. Rodar OWASP ZAP Scan
       - name: Run OWASP ZAP Scan
         uses: zaproxy/action-full-scan@v0.9.0
         with:
@@ -50,6 +45,7 @@ jobs:
           cmd_options: '-r zap-report.html -J zap-report.json -w zap-report.md'
           fail_action: true
 
+      # 4. Upload dos relatórios
       - name: Upload ZAP Reports
         uses: actions/upload-artifact@v4
         with:
@@ -58,3 +54,7 @@ jobs:
             zap-report.html
             zap-report.json
             zap-report.md
+
+      # 5. Stop container
+      - name: Stop Docker container
+        run: docker stop cp-cyber-app
