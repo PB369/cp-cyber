@@ -14,7 +14,6 @@ jobs:
       - name: Checkout código
         uses: actions/checkout@v4
 
-      # Rodar OWASP ZAP Baseline Scan no endpoint público do ngrok
       - name: Run OWASP ZAP Baseline Scan
         env:
           NGROK_URL: ${{ secrets.NGROK_URL }}
@@ -22,17 +21,28 @@ jobs:
           mkdir -p ./zap-reports
           chmod 777 ./zap-reports
 
-          echo "🔍 Iniciando varredura de segurança no endpoint: $NGROK_URL"
+          echo "🔍 Iniciando varredura de segurança em $NGROK_URL ..."
 
+          # Executa o scan e salva o relatório JSON
           docker run \
             -v $(pwd)/zap-reports:/zap/wrk/:rw \
             ghcr.io/zaproxy/zaproxy:stable \
             zap-baseline.py \
               -t $NGROK_URL \
               -r zap-report.html \
+              -J zap-report.json \
               -I
 
-      # Publicar o relatório HTML como artefato
+          echo "✅ Varredura concluída. Verificando vulnerabilidades críticas/altas..."
+        
+          HIGH_CRITICAL_COUNT=$(jq '[.site[].alerts[] | select(.risk == "High" or .risk == "Medium" or .risk == "Critical")] | length' ./zap-reports/zap-report.json)
+          echo "Encontradas $HIGH_CRITICAL_COUNT vulnerabilidades de severidade alta ou crítica."
+
+          if [ "$HIGH_CRITICAL_COUNT" -gt 0 ]; then
+            echo "🚨 Vulnerabilidades sérias detectadas. Bloqueando pipeline."
+            exit 1
+          fi
+
       - name: Upload ZAP Report
         uses: actions/upload-artifact@v4
         with:
